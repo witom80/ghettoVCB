@@ -304,18 +304,6 @@ sanityCheck() {
         ADAPTERTYPE_DEPRECATED=1
     fi
 
-    ESX_VERSION=$(vmware -v | awk '{print $3}')
-    ESX_RELEASE=$(uname -r)
-
-    case "${ESX_VERSION}" in
-	    7.0.0|7.0.1)          VER=7; break;;
-        6.0.0|6.5.0|6.7.0)    VER=6; break;;
-        5.0.0|5.1.0|5.5.0)    VER=5; break;;
-        4.0.0|4.1.0)          VER=4; break;;
-        3.5.0|3i)             VER=3; break;;
-        *)              echo "ESX(i) version not supported!"; exit 1; break;;
-    esac
-
     NEW_VIMCMD_SNAPSHOT="no"
     ${VMWARE_CMD} vmsvc/snapshot.remove 2>&1 | grep -q "snapshotId"
     [[ $? -eq 0 ]] && NEW_VIMCMD_SNAPSHOT="yes"
@@ -334,7 +322,7 @@ sanityCheck() {
     [[ ! -f /bin/tar ]] && TAR="busybox tar"
 
     # Enable multiextent VMkernel module if disk format is 2gbsparse (disabled by default in 5.1)
-    if [[ "${DISK_BACKUP_FORMAT}" == "2gbsparse" ]] && [[ "${VER}" -eq 5 || "${VER}" == "6" || "${VER}" == "7" ]]; then
+    if [[ "${DISK_BACKUP_FORMAT}" == "2gbsparse" ]]; then
         esxcli system module list | grep multiextent > /dev/null 2>&1
 	if [ $? -eq 1 ]; then
             logger "info" "multiextent VMkernel module is not loaded & is required for 2gbsparse, enabling ..."
@@ -903,11 +891,7 @@ ghettoVCB() {
             #1 = readonly
             #0 = readwrite
             logger "debug" "Mounting NFS: ${NFS_SERVER}:${NFS_MOUNT} to /vmfs/volume/${NFS_LOCAL_NAME}"
-	    if [[ ${ESX_RELEASE} == "5.5.0" ]] || [[ ${ESX_RELEASE} == "6.0.0" || ${ESX_RELEASE} == "6.5.0" || ${ESX_RELEASE} == "6.7.0" || ${ESX_RELEASE} == "7.0.0" || ${ESX_RELEASE} == "7.0.1" ]] ; then
-                ${VMWARE_CMD} hostsvc/datastore/nas_create "${NFS_LOCAL_NAME}" "${NFS_VERSION}" "${NFS_MOUNT}" 0 "${NFS_SERVER}"
-            else
-                ${VMWARE_CMD} hostsvc/datastore/nas_create "${NFS_LOCAL_NAME}" "${NFS_SERVER}" "${NFS_MOUNT}" 0
-            fi
+            ${VMWARE_CMD} hostsvc/datastore/nas_create "${NFS_LOCAL_NAME}" "${NFS_VERSION}" "${NFS_MOUNT}" 0 "${NFS_SERVER}"
 	fi
     fi
 
@@ -1222,21 +1206,13 @@ ghettoVCB() {
                             if [[ $? -eq 1 ]] ; then
                                 FORMAT_OPTION="UNKNOWN"
                                 if [[ "${DISK_BACKUP_FORMAT}" == "zeroedthick" ]] ; then
-                                    if [[ "${VER}" == "4" ]] || [[ "${VER}" == "5" ]] || [[ "${VER}" == "6" ]] || [[ "${VER}" == "7" ]] ; then
-                                        FORMAT_OPTION="zeroedthick"
-                                    else
-                                        FORMAT_OPTION=""
-                                    fi
+                                    FORMAT_OPTION="zeroedthick"
                                 elif [[ "${DISK_BACKUP_FORMAT}" == "2gbsparse" ]] ; then
                                     FORMAT_OPTION="-d 2gbsparse"
                                 elif [[ "${DISK_BACKUP_FORMAT}" == "thin" ]] ; then
                                     FORMAT_OPTION="-d thin"
                                 elif [[ "${DISK_BACKUP_FORMAT}" == "eagerzeroedthick" ]] ; then
-                                    if [[ "${VER}" == "4" ]] || [[ "${VER}" == "5" ]] || [[ "${VER}" == "6" ]] || [[ "${VER}" == "7" ]]; then
-                                        FORMAT_OPTION="-d eagerzeroedthick"
-                                    else
-                                        FORMAT_OPTION=""
-                                    fi
+                                    FORMAT_OPTION="-d eagerzeroedthick"
                                 fi
 
                                 if  [[ "${FORMAT_OPTION}" == "UNKNOWN" ]] ; then
@@ -1512,13 +1488,11 @@ sendMail() {
     if [[ "${EMAIL_LOG}" -eq 1 ]] || [[ "${EMAIL_ALERT}" -eq 1 ]] ; then
         SMTP=1
         #validate firewall has email port open for ESXi 5
-        if [[ "${VER}" == "5" ]] || [[ "${VER}" == "6" ]] || [[ "${VER}" == "7" ]]; then
-            /sbin/esxcli network firewall ruleset rule list | awk -F'[ ]{2,}' '{print $5}' | grep "^${EMAIL_SERVER_PORT}$" > /dev/null 2>&1
-            if [[ $? -eq 1 ]] ; then
-                logger "info" "ERROR: Please enable firewall rule for email traffic on port ${EMAIL_SERVER_PORT}\n"
-                logger "info" "Please refer to ghettoVCB documentation for ESXi 5 firewall configuration\n"
-                SMTP=0
-            fi
+        /sbin/esxcli network firewall ruleset rule list | awk -F'[ ]{2,}' '{print $5}' | grep "^${EMAIL_SERVER_PORT}$" > /dev/null 2>&1
+        if [[ $? -eq 1 ]] ; then
+            logger "info" "ERROR: Please enable firewall rule for email traffic on port ${EMAIL_SERVER_PORT}\n"
+            logger "info" "Please refer to ghettoVCB documentation for ESXi 5 firewall configuration\n"
+            SMTP=0
         fi
     fi
 
